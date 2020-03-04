@@ -4,14 +4,15 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <sys/wait.h>
-//select()
-#include <unistd.h>
 #include <sys/time.h>
 #include <sys/select.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <signal.h>
 
 void help(){
 	printf("\n=============================================================\n");
@@ -26,231 +27,195 @@ void help(){
 	printf("=============================================================\n");
 }
 
-int main(int argc, char **argv){
-	
+int main(int argc, char *argv[]){
 	if(argc != 2){
 		printf("specify port number!");
 		exit(1);
 	}
-	
 	int port = atoi(argv[1]);
-	char msg[256];
-	bzero(&msg, sizeof(msg));
 	
-	//select variables
 	int opt = 1;
-	int master_socket, addrlen, new_socket, client_socket[20], max_clients = 20, activity, i, valread, sd;
+	int master_socket, addrlen, new_socket,
+		client_socket[30], max_clients = 30,
+		activity, i, valread, sd;
 	int max_sd;
 	struct sockaddr_in address;
-	
 	char buffer[1025];
 	
 	fd_set readfds;
-
-	for (i = 0; i < max_clients; i++){
+	
+	for(i = 0; i < max_clients; i++){
 		client_socket[i] = 0;
 	}
-
-	if( (master_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0){
-		perror("server: socket");
+	
+	//socket()
+	if((master_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0){
+		perror("socket failed");
 		exit(1);
 	}
-	if( setsockopt(master_socket, SOL_SOCKET, SO_REUSEADDR, (char *)&opt,
-		sizeof(opt)) < 0){
-			perror("setsockopt");
-			exit(1);
-		}
-	bzero(&address, sizeof(address));
+	
+	
+	//get host ip
+	char hostbuffer[256];
+	char *IPbuffer;
+	struct hostent *host_entry;
+	int hostname;
+	hostname = gethostname(hostbuffer, sizeof(hostbuffer));
+	host_entry = gethostbyname(hostbuffer);
+	IPbuffer = inet_ntoa(*((struct in_addr *)host_entry->h_addr_list[0]));
 	
 	address.sin_family = AF_INET;
 	address.sin_addr.s_addr = INADDR_ANY;
 	address.sin_port = htons(port);
 	
-	
-	if( (bind(master_socket, (struct sockaddr *)&address, sizeof(address))) < 0){
-		close(master_socket);
-		perror("server: bind");
+	//bind()
+	if(bind(master_socket, (struct sockaddr *)&address, sizeof(address)) < 0){
+		perror("bind failed");
 		exit(1);
 	}
 	
-	if( listen(master_socket, 10) < 0){
+	//listen()
+	if(listen(master_socket, 3) < 0){
 		perror("listen");
 		exit(1);
 	}
+	
 	addrlen = sizeof(address);
+	printf(">> ");
+	puts("Waiting for connections...");
 	
-	char hostbuffer[256];
-	char *IPbuffer;
-	struct hostent *host_entry;
-	int hostname;
-	
-	hostname = gethostname(hostbuffer, sizeof(hostbuffer));
-	host_entry = gethostbyname(hostbuffer);
-	IPbuffer = inet_ntoa(*((struct in_addr *)host_entry->h_addr_list[0]));
-	
-	
-	printf("Server: waiting for connections... \n");
-	
-	
-	//end of setting up socket
-	
-	
-	char cmd[20];
+	char arga[3][32];
+	char cmd[64];
 	char *arg;
 	while(1){
-		printf("asdf");
-		int clientsockfd;
-		struct sockaddr_in addrto;
-		int connected;
-		char *ip_to_connect;
-		int port_to_connect;
-		
-		//accept incoming requests--
+		//clear socket set
 		FD_ZERO(&readfds);
+		//add stdin for command response
+		FD_SET(0, &readfds);
+		//add master socket to set
 		FD_SET(master_socket, &readfds);
 		max_sd = master_socket;
-		
+		//add child sockets to set
 		for(i = 0; i < max_clients; i++){
 			sd = client_socket[i];
-			
 			if(sd > 0){
 				FD_SET(sd, &readfds);
 			}
-			
-			if(sd >  max_sd){
+			if(sd > max_sd){
 				max_sd = sd;
 			}
 		}
-		struct timeval tv;
-		tv.tv_sec = 10;
-		activity = select(max_sd + 1, &readfds, NULL, NULL, &tv.tv_sec);
+		
+		//waits for socket activity
+		activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
 		
 		if((activity < 0) && (errno!=EINTR)){
 			printf("select error");
 		}
 		
-		if(FD_ISSET(master_socket, &readfds)){
-			if((new_socket = accept(master_socket, (struct sockaddr *)&address, (socklen_t *)&addrlen) < 0)){
-				perror("accept");
-				exit(1);
+		//check for run commands (0 == stdin)
+		if(FD_ISSET(0, &readfds)){
+			//take inputs
+			bzero(cmd, sizeof(cmd));
+			int nread;
+			if((nread = read(STDIN_FILENO, cmd, sizeof(cmd))) == 0){
+				printf("input not read");
 			}
 			
-			printf("New connection , socket fd is %d , ip is : %s , port : %d\n",
-			new_socket, inet_ntoa(address.sin_addr), ntohs(address.sin_port));
-		
-			if( send(new_socket, msg, strlen(msg), 0) != strlen(msg) ){
-				perror("send");
+			//remove newline
+			cmd[nread-1] = '\0';
+			
+			//parse command
+			for(i = 0; i < 3; i++){
+				bzero(arga[i], sizeof(arga[i]));
 			}
-		
-			puts("Welcome message sent successfully");
-		
-			for (i = 0; i < max_clients; i++){
-				if( client_socket[i] == 0){
-					client_socket[i] = new_socket;
-					printf("Adding to list of sockets as %d\n");
-					break;
-				}
-			}
-		}
-		for(i = 0; i < max_clients; i++){
-			sd = client_socket[i];
-			if(FD_ISSET(sd, &readfds)){
-				if((valread = read(sd, buffer, 1024)) == 0){
-					getpeername(sd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
-					printf("Host disconnected, ip %s, port %d \n",
-						inet_ntoa(address.sin_addr), ntohs(address.sin_port));
-					close(sd);
-					client_socket[i] = 0;
-				}
-			}
-			else{
-				buffer[valread] = '\0';
-				send(sd, buffer, strlen(buffer), 0);
-			}
-		}
-		
-		
-		/* get client's ip
-		char theirbuffer[256];
-		char *theirIPbuffer;
-		struct hostent *theirhost_entry;
-		int theirhostname;
-		theirhostname = gethostname(theirbuffer, sizeof(theirbuffer));
-		host_entry = gethostbyname(theirhostname);
-		theirIPbuffer = inet_ntoa(*((struct in_addr *)theirhost_entry->h_addr_list[0]));
-		printf("Server: got connections from %s\n", theirIPbuffer);
-		*/
-		
-		//take inputs
-		printf(">> ");
-		scanf("%s", cmd);
-		
-		argc = 0;
-		arg = strtok(cmd, " ");
-		while(arg){
-			strcpy(argv[argc], arg);
-			argc += 1;
-			arg = strtok(NULL, " ");
-		}
-		
-		//user choice
-		if(!(strcmp(argv[0], "help"))){
-			help();
-		}
-		
-		else if(!(strcmp(argv[0], "myip"))){
-			printf("The IP address is %s\n", IPbuffer);
-		}
-		
-		else if(!(strcmp(argv[0], "myport"))){
-			printf("The program runs on port number %d\n", port);
-		}
-		
-		else if(!(strcmp(argv[0], "connect"))){
-			*ip_to_connect = argv[1];
-			port_to_connect = argv[2];
-			printf("connecting to %s:%d", ip_to_connect, port_to_connect);
-			clientsockfd = socket(AF_INET, SOCK_STREAM, 0);
-			addrto.sin_family = AF_INET;
-			addrto.sin_port = port_to_connect;
-			addrto.sin_addr.s_addr = inet_addr(ip_to_connect);
-			printf("connecting to %s:%d", ip_to_connect, port_to_connect);
-			if((connected = connect(clientsockfd, (struct sockaddr *)&addrto, sizeof(addrto))) < 0){
-				printf("Connection Unsuccessful");
+			argc = 0;
+			arg = strtok(cmd, " ");
+			while(arg != NULL){
+				strcpy(arga[argc], arg);
+				argc += 1;
+				arg = strtok(NULL, " ");
 			}
 			
-			if(connected){
+			//user choice
+			if(!(strcmp(arga[0], "help"))){
+				help();
+			}
+			
+			else if(!(strcmp(arga[0], "myip"))){
+				printf("The IP address is %s\n", IPbuffer);
+			}
+			
+			else if(!(strcmp(arga[0], "myport"))){
+				printf("The program runs on port number %d\n", port);
+			}
+			
+			else if(!(strcmp(arga[0], "connect"))){
+				printf("connecting\n");
+				char *ip_to_connect = arga[1];
+				int port_to_connect = atoi(arga[2]);int clientsockfd;
+				clientsockfd = socket(AF_INET, SOCK_STREAM, 0);
+				struct sockaddr_in server_address;
+				server_address.sin_family = AF_INET;
+				server_address.sin_port = htons(port_to_connect);
+				inet_aton(ip_to_connect, &server_address.sin_addr);
+				printf("connecting to %s:%d", ip_to_connect, port_to_connect);
+				int connected;
+				if((connected = connect(clientsockfd, (struct sockaddr *)&server_address, sizeof(server_address))) < 0){
+					printf("Connection Unsuccessful\n");
+				}
+				else{
+					printf("Connection Success!");
+				}
 				
 			}
 			
+			else if(!(strcmp(arga[0], "list"))){
+				
+			}
 			
+			else if(!(strcmp(arga[0], "terminate"))){
+				
+			}
+			
+			else if(!(strcmp(arga[0], "send"))){
+
+			}
+			
+			else if(!(strcmp(arga[0], "exit"))){
+				exit(1);
+			}
+			
+			else{
+				printf("Cannot read input\n");
+			}
+		}
+		
+		if(FD_ISSET(master_socket, &readfds)){
+			//accept()
+			if((new_socket = accept(master_socket,
+				(struct sockaddr *)&address,
+				(socklen_t *)&addrlen)) < 0){
+					perror("accept");
+					exit(1);
+				}
+			printf("The connection to peer %s is successfully established\n",
+				inet_ntoa(address.sin_addr));
+			
+			//add new socket to array of sockets
+			for(i = 0; i < max_clients; i++){
+				if(client_socket[i] == 0){
+					client_socket[i] = new_socket;
+					printf("Adding to list of sockets as %d\n", i);
+					break;
+				}
+			}
 			
 		}
 		
-		else if(!(strcmp(argv[0], "list"))){
-			
-		}
-		
-		else if(!(strcmp(argv[0], "terminate"))){
-			
-		}
-		
-		else if(!(strcmp(argv[0], "send"))){
-			printf("Enter a message: ");
-			fgets(msg, 256, stdin);
-			send(clientsockfd, msg, strlen(msg), 0);
-		}
-		
-		else if(!(strcmp(argv[0], "exit"))){
-			exit(1);
-		}
-		
-		else{
-			printf("Cannot read input\n");
-		}
 		
 	}
-
-
-
+	
+	
+	return 0;
 }
