@@ -84,6 +84,10 @@ int main(int argc, char *argv[]){
 	printf(">> ");
 	puts("Waiting for connections...");
 	
+
+	struct sockaddr_in tempaddr;
+	int tempfd;
+	
 	char arga[3][32];
 	char cmd[64];
 	char *arg;
@@ -153,25 +157,68 @@ int main(int argc, char *argv[]){
 			else if(!(strcmp(arga[0], "connect"))){
 				printf("connecting\n");
 				char *ip_to_connect = arga[1];
-				int port_to_connect = atoi(arga[2]);int clientsockfd;
+				int port_to_connect = atoi(arga[2]);
+				int clientsockfd;
+				//check unique connection
+				int exists = 0;
+				//check ip:port to connection_socket[0-max] 
+				for(i = 0; i < max_clients; i++){
+					if(client_socket[i] > 0){
+						getpeername(client_socket[i],
+							(struct sockaddr *)&address,
+							(socklen_t *)&addrlen);
+						if(!(strcmp(inet_ntoa(address.sin_addr), ip_to_connect))
+							&& ntohs(address.sin_port) == port_to_connect){
+								exists = 1;
+								printf("Connection to address and port already exists\n");
+								break;
+							}
+					}
+				}
+				int self = 0;
+				if(!strcmp(IPbuffer, ip_to_connect)
+					&& port == port_to_connect){
+						printf("Cannot connect to self\n");
+						self = 1;
+					}
+				if(exists || self) continue;
 				clientsockfd = socket(AF_INET, SOCK_STREAM, 0);
 				struct sockaddr_in server_address;
 				server_address.sin_family = AF_INET;
 				server_address.sin_port = htons(port_to_connect);
 				inet_aton(ip_to_connect, &server_address.sin_addr);
-				printf("connecting to %s:%d", ip_to_connect, port_to_connect);
+				//printf("connecting to %s:%d", ip_to_connect, port_to_connect);
 				int connected;
 				if((connected = connect(clientsockfd, (struct sockaddr *)&server_address, sizeof(server_address))) < 0){
 					printf("Connection Unsuccessful\n");
+					break;
 				}
 				else{
-					printf("Connection Success!");
+					printf("Socket %d Connection Success!\n", clientsockfd);
+					for(i = 0; i < max_clients; i++){
+						if(client_socket[i] == 0){
+							client_socket[i] = clientsockfd;
+							break;
+						}
+					}
 				}
 				
 			}
 			
 			else if(!(strcmp(arga[0], "list"))){
-				
+				printf("id: IP address\t\t\tPort No.\n");
+				for(i = 0; i < max_clients; i++){
+					//socket filled
+					if(client_socket[i] > 0){
+						getpeername(client_socket[i],
+							(struct sockaddr *)&tempaddr,
+							(socklen_t *)sizeof(tempaddr));
+						char ip4[20];
+						strcpy(ip4, inet_ntoa(tempaddr.sin_addr));
+						printf("%d:\t%s\t\t\t%d\n",
+							i, ip4, ntohs(tempaddr.sin_port));
+					}
+				}
 			}
 			
 			else if(!(strcmp(arga[0], "terminate"))){
@@ -179,7 +226,7 @@ int main(int argc, char *argv[]){
 			}
 			
 			else if(!(strcmp(arga[0], "send"))){
-
+				int id = atoi(arga[1]);
 			}
 			
 			else if(!(strcmp(arga[0], "exit"))){
