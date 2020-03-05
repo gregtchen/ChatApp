@@ -88,7 +88,7 @@ int main(int argc, char *argv[]){
 	struct sockaddr_in tempaddr;
 	int tempfd;
 	
-	char arga[3][32];
+	char arga[3][256];
 	char cmd[64];
 	char *arg;
 	while(1){
@@ -133,6 +133,7 @@ int main(int argc, char *argv[]){
 			for(i = 0; i < 3; i++){
 				bzero(arga[i], sizeof(arga[i]));
 			}
+			
 			argc = 0;
 			arg = strtok(cmd, " ");
 			while(arg != NULL){
@@ -206,27 +207,59 @@ int main(int argc, char *argv[]){
 			}
 			
 			else if(!(strcmp(arga[0], "list"))){
-				printf("id: IP address\t\t\tPort No.\n");
+				printf("id: IP address\t\tPort No.\n");
 				for(i = 0; i < max_clients; i++){
 					//socket filled
 					if(client_socket[i] > 0){
 						getpeername(client_socket[i],
-							(struct sockaddr *)&tempaddr,
-							(socklen_t *)sizeof(tempaddr));
+							(struct sockaddr *)&address,
+							(socklen_t *)&addrlen);
 						char ip4[20];
-						strcpy(ip4, inet_ntoa(tempaddr.sin_addr));
-						printf("%d:\t%s\t\t\t%d\n",
-							i, ip4, ntohs(tempaddr.sin_port));
+						strcpy(ip4, inet_ntoa(address.sin_addr));
+						printf("%d:   %s\t\t%d\n",
+							i, ip4, ntohs(address.sin_port));
 					}
 				}
 			}
 			
 			else if(!(strcmp(arga[0], "terminate"))){
-				
+				int id = atoi(arga[1]);
+				for(i = 0; i < max_clients; i++){
+					//remove from list
+					if(i == id){
+						if(client_socket[i] > 0){
+							close(client_socket[i]);
+							client_socket[i] = 0;
+							printf("socket [id: %d] closed\n", i);
+							break;
+						}
+						else{
+							printf("invalid socket\n");
+							break;
+						}
+					}
+				}
 			}
 			
 			else if(!(strcmp(arga[0], "send"))){
 				int id = atoi(arga[1]);
+				char* msg = arga[2];
+				char message[256];
+				strcpy(message, msg);
+				
+				for(i = 0; i < max_clients; i++){
+					if(id == i){
+						if(client_socket[i] > 0){
+							send(client_socket[i], message, sizeof(message), 0);
+							printf("message sent\n");
+						}
+						else{
+							printf("send error. invalid socket\n");
+						}
+						break;
+					}
+				}
+				
 			}
 			
 			else if(!(strcmp(arga[0], "exit"))){
@@ -259,6 +292,78 @@ int main(int argc, char *argv[]){
 			}
 			
 		}
+		
+		/*
+		//receive I/O from client sockets
+		for(i = 0; i < max_clients; i++){
+			sd = client_socket[i];
+			if(FD_ISSET(sd, &readfds)){
+				char recvchars[256];
+				int recvstatus = recv(sd, recvchars, sizeof(recvchars), 0); 
+				getpeername(sd,
+					(struct sockaddr *)&address, 
+					(socklen_t *)&addrlen);
+				if(valread == 0){
+					//disconnected
+					printf("Host disconnected, %s:%d\n",
+						inet_ntoa(address.sin_addr), ntohs(address.sin_port));
+					close(sd);
+					client_socket[i] = 0;
+				}
+				else if (valread > 0){
+					//received message
+					printf("Message received from %s:%d\n\"%s\"\n",
+						inet_ntoa(address.sin_addr),
+						ntohs(address.sin_port),
+						recvchars);
+				}
+			}
+		}
+		*/
+		
+		for (i = 0; i < max_clients; i++)   
+        {
+			sd = client_socket[i];
+			if (FD_ISSET( sd , &readfds) && (sd > 0))
+			{
+				char buffer_recv[256];
+				//receive message in 'buffer_recv' and 'rval' holds status
+				int rval = recv(sd , buffer_recv , sizeof(buffer_recv) , 0 ); 				
+				if (rval > 0)  //a message is being sent
+				{
+					int b_length = strlen(buffer_recv);
+					
+					//inform user of terminated connection socket
+					getpeername(sd , (struct sockaddr*)&address , (socklen_t*)&addrlen);
+					
+					printf("Message received from %s\n", inet_ntoa(address.sin_addr));
+					printf("Sender's Port: %d\n", ntohs(address.sin_port));
+					printf("Message: %s \n", buffer_recv);
+					memset(buffer_recv, 0, sizeof(buffer_recv));
+				}
+				else if (rval == 0)  //other client is disconnecting
+				{
+					//Somebody disconnected , get his details and print  
+                    getpeername(sd , (struct sockaddr*)&address , 
+                        (socklen_t*)&addrlen);   
+                    printf("Host disconnected , ip %s , port %d \n\n" ,  
+                          inet_ntoa(address.sin_addr) , ntohs(address.sin_port));   
+                         
+                    //Close the socket and mark as 0 in list for reuse  
+                    close( sd );   
+                    client_socket[i] = 0;
+					
+				}
+				else if (rval < 0)  //error in receiving
+				{
+					//error message
+					printf("There was an ERROR in receiving!\n\n");
+				}
+			}
+			
+		}
+		
+		//
 		
 		
 	}
