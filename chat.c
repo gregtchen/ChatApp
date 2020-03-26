@@ -26,7 +26,7 @@ void help(){
 	printf("exit \tQuits application\n");
 	printf("=============================================================\n");
 }
-//fix : cross computer myip/myport
+
 int main(int argc, char *argv[]){
 	if(argc != 2){
 		printf("specify port number!");
@@ -62,8 +62,10 @@ int main(int argc, char *argv[]){
 	hostname = gethostname(hostbuffer, sizeof(hostbuffer));
 	host_entry = gethostbyname(hostbuffer);
 	IPbuffer = inet_ntoa(*((struct in_addr *)host_entry->h_addr_list[0]));
+	//store host's IP here
 	char myIP[sizeof(struct in_addr *)];
 	strcpy(myIP, IPbuffer);
+	
 	address.sin_family = AF_INET;
 	address.sin_addr.s_addr = INADDR_ANY;
 	address.sin_port = htons(port);
@@ -332,6 +334,8 @@ int main(int argc, char *argv[]){
 				}
 				else{
 					perror("recv msg");
+					//?
+					break;
 				}
 			}
 		}
