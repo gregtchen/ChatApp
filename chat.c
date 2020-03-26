@@ -34,7 +34,6 @@ int main(int argc, char *argv[]){
 	}
 	int port = atoi(argv[1]);
 	
-	int opt = 1;
 	int master_socket, addrlen, new_socket,
 		client_socket[30], max_clients = 30,
 		activity, i, valread, sd;
@@ -64,6 +63,7 @@ int main(int argc, char *argv[]){
 	host_entry = gethostbyname(hostbuffer);
 	IPbuffer = inet_ntoa(*((struct in_addr *)host_entry->h_addr_list[0]));
 	char myIP[sizeof(struct in_addr *)];
+	strcpy(myIP, IPbuffer);
 	address.sin_family = AF_INET;
 	address.sin_addr.s_addr = INADDR_ANY;
 	address.sin_port = htons(port);
@@ -84,9 +84,6 @@ int main(int argc, char *argv[]){
 	printf(">> ");
 	puts("Waiting for connections...");
 	
-
-	struct sockaddr_in tempaddr;
-	int tempfd;
 	
 	char arga[3][256];
 	char cmd[64];
@@ -150,7 +147,7 @@ int main(int argc, char *argv[]){
 			}
 			
 			else if(!(strcmp(arga[0], "myip"))){
-				printf("The IP address is %s\n", IPbuffer);
+				printf("The IP address is %s\n", myIP);
 			}
 			
 			else if(!(strcmp(arga[0], "myport"))){
@@ -179,7 +176,7 @@ int main(int argc, char *argv[]){
 					}
 				}
 				int self = 0;
-				if(!strcmp(IPbuffer, ip_to_connect)
+				if(!strcmp(myIP, ip_to_connect)
 					&& port == port_to_connect){
 						printf("Cannot connect to self\n");
 						self = 1;
@@ -194,7 +191,7 @@ int main(int argc, char *argv[]){
 				int connected;
 				if((connected = connect(clientsockfd, (struct sockaddr *)&server_address, sizeof(server_address))) < 0){
 					printf("Connection Unsuccessful\n");
-					break;
+					
 				}
 				else{
 					printf("Socket %d Connection Success!\n", clientsockfd);
@@ -262,13 +259,13 @@ int main(int argc, char *argv[]){
 
 				}
 				
-				printf("%s", message);
+				//printf("%s", message);
 				
 				for(i = 0; i < max_clients; i++){
 					if(id == i){
 						if(client_socket[i] > 0){
 							send(client_socket[i], message, sizeof(message), 0);
-							printf("\nmessage sent\n");
+							printf("\nMessage sent to <%d>\n", i);
 						}
 						else{
 							printf("send error. invalid socket\n");
@@ -319,7 +316,7 @@ int main(int argc, char *argv[]){
 				//disconnect
 				if((valread = recv(sd, buffer, 1024, 0)) == 0){
 					getpeername(sd, (struct sockaddr*)&address, (socklen_t*)&addrlen);
-					printf("Host [%s:%d] disconnected",
+					printf("Host [%s:%d] disconnected\n",
 						inet_ntoa(address.sin_addr),
 						ntohs(address.sin_port));
 					close(sd);
@@ -328,7 +325,7 @@ int main(int argc, char *argv[]){
 				//receive message
 				else if (valread > 0){
 					getpeername(sd, (struct sockaddr*)&address, (socklen_t*)&addrlen);
-					printf("Message from [%s:%d] received:\n",
+					printf("\nMessage received from %s\nSender's Port: %d\n",
 						inet_ntoa(address.sin_addr),
 						ntohs(address.sin_port));
 						printf("Message: %s\n", buffer);
